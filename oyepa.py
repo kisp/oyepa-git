@@ -25,7 +25,7 @@ import datetime, os, sys, user, pickle, time, threading
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
 
-from fslayer import Doc, getDocDirs, getDocDirHierarchy, validTag, validDocName, getAllTags, runQuery, tagDoc, renameTag, removeTag,  getCurrentPureNameAndTagsForDoc, rebuildTagCache, split_purename_and_tags_from_filename, moveDocTo, removeDoc, copyDocTo, read_doc_dirs
+from fslayer import Doc, getDocDirs, validTag, validDocName, getAllTags, runQuery, tagDoc, renameTag, removeTag,  getCurrentPureNameAndTagsForDoc, rebuildTagCache, split_purename_and_tags_from_filename, moveDocTo, removeDoc, copyDocTo
 from generic_code import *
 
 import cfg
@@ -201,7 +201,7 @@ class RenameTagDialog(QDialog):
 
             if self.exec_() == QDialog.Rejected: return None
 
-            newTag = unicode(self.lineedit.text().toUtf8(), 'utf-8').strip().lower()
+            newTag = str(self.lineedit.text().toLatin1()).strip().lower()
 
             if not validTag(newTag): QMessageBox.warning(None, "Rename tag", "Invalid tag!")
 
@@ -281,7 +281,7 @@ class GetCopyMoveDestinationDialog(QDialog):
 
             if self.exec_() == QDialog.Rejected: return None
 
-            dirname = unicode(self.dirLineedit.text().toUtf8(), 'utf-8').strip()
+            dirname = str(self.dirLineedit.text().toLatin1()).strip()
             dirname = os.path.abspath(dirname)
 
             if not os.path.isdir(dirname): QMessageBox.warning(None, self.winTitle, "Invalid dir name!")
@@ -315,7 +315,7 @@ class GetCopyMoveDestinationDialog(QDialog):
 
             pass
 
-        print "getDestPath() == " + unicode(destPath, 'utf-8')
+        print "getDestPath() == " + str(destPath)
         return destPath
 
     pass
@@ -334,7 +334,7 @@ class AppCmdDialog(QDialog):
 
     def updateForgetButton(self, text): # this function grays out the "forget" button depending on whether or not the user has entered a valid app name into that lineedit
 
-        self.forgetButton.setEnabled(unicode(text.toUtf8(),'utf-8') in self.appMem)
+        self.forgetButton.setEnabled(str(text.toLatin1()) in self.appMem)
         return
 
     def __init__(self, extension, isdir, parent):
@@ -514,219 +514,73 @@ class AppCmdDialog(QDialog):
 
     def updateCmdLineEdit(self, text):
 
-        if unicode(text.toUtf8(), 'utf-8') in self.appMem.keys():
+        if str(text.toLatin1()) in self.appMem.keys():
 
-            self.cmdLineEdit.setText(self.appMem[unicode(text.toUtf8(), 'utf-8')])
+            self.cmdLineEdit.setText(self.appMem[str(text.toLatin1())])
         else: self.cmdLineEdit.setText("")
 
         return
 
-    def getCmd(self): return unicode(self.cmdLineEdit.text().toUtf8(), 'utf-8').strip()
-    def getAppName(self): return unicode(self.appNameLineEdit.text().toUtf8(), 'utf-8').strip().lower()
+    def getCmd(self): return str(self.cmdLineEdit.text().toLatin1()).strip()
+    def getAppName(self): return str(self.appNameLineEdit.text().toLatin1()).strip().lower()
 
     pass
 
+class DirSelector(QGroupBox):
 
-class DirSelector(QTreeView):
+    def __init__(self, doc_dirs, dirsInCmdLine, parent = None):
 
-    def __init__(self, doc_dir_hierarchy, dirsInCmdLine, parent = None):
+        QGroupBox.__init__(self, "Search &in...", parent)
 
-        QTreeView.__init__(self,parent)
-        self.itemModel = QStandardItemModel()
+        self.buttonGroup = QButtonGroup(self)
+        self.buttonGroup.setExclusive(False)
+
+        layout = QVBoxLayout()
+
+        self.selectedDirs = set()
+
+        # now setup the checkboxes
+
+        dirsInCmdLine = map(os.path.abspath, dirsInCmdLine)
 
 
-        self.setModel(self.itemModel)
-        self.selectionModel = QItemSelectionModel(self.itemModel)
-        self.setSelectionModel(self.selectionModel)
-        self.setSelectionMode(QAbstractItemView.MultiSelection)
-        self.setSortingEnabled(True)
+        for d in sorted(doc_dirs, key=os.path.basename):
 
-        self.updateDirs(doc_dir_hierarchy)
+            cbox = QCheckBox(os.path.basename(d))
+            cbox.setProperty("abspath", QVariant(QString(d)))
 
-        self.connect(self.itemModel, SIGNAL("itemChanged(QStandardItem*)"), self.selectDirTree)
-        self.connect(self, SIGNAL("clicked(QModelIndex)"), self.dirSelected)
+            if len(dirsInCmdLine) == 0 or d in dirsInCmdLine:
 
-        if( len(dirsInCmdLine) == 0):
-            self.selectAll()
-        else:
-            self.selectDirs(dirsInCmdLine)
+                cbox.setCheckState(Qt.Checked)
+                self.selectedDirs.add(d)
 
-        return
-    pass
+            else: cbox.setCheckState(Qt.Unchecked)
 
-    def updateDirs(self, doc_dir_hierarchy):
-
-        # Delete the contents of the item model to start from a blank slate
-        self.itemModel.clear()
-
-        # Define the prototype element for the dir view
-        itemPrototype = QStandardItem()
-        itemPrototype.setCheckable(True)
-        itemPrototype.setTristate(True)
-        itemPrototype.setEditable(False)
-
-        # Now add all entries that will come into the item model in a tree view
-        # (and delete them after they were added)
-        if('HierarchyRootElements' in doc_dir_hierarchy):
-            hierarchyStack = []
-            stringIndex = 0;
-            treeItemIndex = 1;
-            childElementsIndex = 2;
-            lastElementIndex = -1;
-
-            rootElements = doc_dir_hierarchy['HierarchyRootElements']
-            del doc_dir_hierarchy['HierarchyRootElements']
-            childElements = rootElements.copy()
-            while True:
-                while( len(childElements) > 0 ):
-                    childString = childElements.pop();
-                    childObject = QStandardItem.clone(itemPrototype)
-                    childObject.setText(QString(os.path.basename(childString)))
-                    childObject.setData(childString,Qt.UserRole+1)
-
-                    if( len(hierarchyStack) == 0 ):
-                        self.itemModel.appendRow(childObject)
-                    else:
-                        hierarchyStack[lastElementIndex][treeItemIndex].appendRow(childObject)
-
-                    if( childString in doc_dir_hierarchy ):
-                        stackElement = []
-                        stackElement.insert(stringIndex,childString)
-                        stackElement.insert(treeItemIndex, childObject)
-                        stackElement.insert(childElementsIndex, childElements)
-                        hierarchyStack.append(stackElement)
-
-                        childElements = doc_dir_hierarchy[childString]
-                        del doc_dir_hierarchy[childString]
-
-                if( ( len(hierarchyStack) <= 1 ) and len(childElements) == 0 ):
-                    break
-                else:
-                    stackElement = hierarchyStack.pop()
-                    childElements = stackElement[childElementsIndex]
-
-        # Now add all of the remaining entries in doc_dir_hierarchy, which go into the item model as a list
-        for k in doc_dir_hierarchy:
-            singleDirItem = QStandardItem.clone(itemPrototype)
-            singleDirItem.setText(QString(os.path.basename(k)))
-            singleDirItem.setData(childString,Qt.UserRole+1)
-            self.itemModel.appendRow(singleDirItem)
-
-    pass
-
-    def selectDirTree(self, selectionRootElement):
-
-            def selectChildren(elementIndex, select):
-                rootElement = self.itemModel.itemFromIndex(elementIndex)
-                if( rootElement.hasChildren() ):
-                    for i in range( rootElement.rowCount() ):
-                        selectChildren(rootElement.child(i).index(),select)
-
-                if( select == True ):
-                    self.selectionModel.select(elementIndex, QItemSelectionModel.Select)
-                else:
-                    self.selectionModel.select(elementIndex, QItemSelectionModel.Deselect)
-                return
+            self.buttonGroup.addButton(cbox)
+            layout.addWidget(cbox)
             pass
 
-            if( selectionRootElement.checkState() == Qt.Checked ):
+        self.connect(self.buttonGroup, SIGNAL("buttonClicked(QAbstractButton*)"), self.updateSelectedDirs)
+        layout.addStretch(1)
+        self.setLayout(layout)
+        return
 
-                self.selectionModel.select(selectionRootElement.index(), QItemSelectionModel.Select)
-                if( selectionRootElement.hasChildren() ):
-                    selectChildren(selectionRootElement.index(), True)
-            else:
-                self.selectionModel.select(selectionRootElement.index(), QItemSelectionModel.Deselect)
-                if( selectionRootElement.hasChildren() ):
-                    selectChildren(selectionRootElement.index(), False)
+    def updateSelectedDirs(self, cbox):
 
-            self.emit(SIGNAL("selectedDirsChanged()"))
-            return
-    pass
+        dirName = str(cbox.property("abspath").toString().toLatin1())
 
-    def selectDirs(self, dirsToSelect):
+        if cbox.checkState() == Qt.Checked:
 
-        dirsToSelect = map(os.path.abspath, dirsToSelect)
+            self.selectedDirs.add(dirName)
 
-        for dirToSelect in dirsToSelect:
-            # First, get all elements with the same basename that we are looking for
-            indexToPropablySelect = self.itemModel.findItems(QString(os.path.basename(dirToSelect)),Qt.MatchRecursive)
-            if len(indexToPropablySelect) > 0:
-                for item in indexToPropablySelect:
-                    # Then check, just to be sure: Is the absolute path of the elements identical ...
-                    dirString = unicode(item.data(Qt.UserRole+1).toString().toUtf8(), 'utf-8')
-                    if(dirString == dirToSelect):
-                        self.selectionModel.select(item.index(), QItemSelectionModel.Select)
+        else: self.selectedDirs.remove(dirName)
 
-
-    def dirSelected(self, modelIndex):
         self.emit(SIGNAL("selectedDirsChanged()"))
+        return
+
+    def getSelectedDirs(self): return self.selectedDirs
+
     pass
-
-    def getSelectedDirs(self):
-        selectedDirs = set()
-        for i in self.selectedIndexes():
-            item = self.itemModel.itemFromIndex(i)
-            dirString = unicode(item.data(Qt.UserRole+1).toString().toUtf8(), 'utf-8')
-            selectedDirs.add(dirString)
-
-        return selectedDirs
-    pass
-
-#class DirSelector(QGroupBox):
-#
-#    def __init__(self, doc_dirs, dirsInCmdLine, parent = None):
-#
-#        QGroupBox.__init__(self, "Search &in...", parent)
-#
-#        self.buttonGroup = QButtonGroup(self)
-#        self.buttonGroup.setExclusive(False)
-#
-#        layout = QVBoxLayout()
-#
-#        self.selectedDirs = set()
-#
-#        # now setup the checkboxes
-#
-#        dirsInCmdLine = map(os.path.abspath, dirsInCmdLine)
-#
-#
-#        for d in sorted(doc_dirs, key=os.path.basename):
-#
-#            cbox = QCheckBox(os.path.basename(d))
-#            cbox.setProperty("abspath", QVariant(QString(d)))
-#
-#            if len(dirsInCmdLine) == 0 or d in dirsInCmdLine:
-#
-#                cbox.setCheckState(Qt.Checked)
-#                self.selectedDirs.add(d)
-#
-#            else: cbox.setCheckState(Qt.Unchecked)
-#
-#            self.buttonGroup.addButton(cbox)
-#            layout.addWidget(cbox)
-#            pass
-#
-#        self.connect(self.buttonGroup, SIGNAL("buttonClicked(QAbstractButton*)"), self.updateSelectedDirs)
-#        layout.addStretch(1)
-#        self.setLayout(layout)
-#        return
-#
-#    def updateSelectedDirs(self, cbox):
-#
-#        dirName = unicode(cbox.property("abspath").toString().toUtf8(), 'utf-8')
-#
-#        if cbox.checkState() == Qt.Checked:
-#
-#            self.selectedDirs.add(dirName)
-#
-#        else: self.selectedDirs.remove(dirName)
-#
-#        self.emit(SIGNAL("selectedDirsChanged()"))
-#        return
-#
-#    def getSelectedDirs(self): return self.selectedDirs
-#
-#    pass
 
 class MusicExtensionsWidget(QGroupBox):
 
@@ -760,7 +614,7 @@ class MusicExtensionsWidget(QGroupBox):
         else: self.currentChoice = cfg.FAKE_EXTENSION_FOR_DIRS
 
         self.emit(SIGNAL("extensionListChanged()"))
-        print "currentChoice: " + unicode(self.currentChoice, 'utf-8')
+        print "currentChoice: " + str(self.currentChoice)
         return
 
     def getExtensions(self): return [self.currentChoice] # IMPORTANT! If we just return a string "radio", then the caller will get a list ["r","a","d","i","o"]
@@ -794,7 +648,7 @@ class DefaultExtensionsWidget(QWidget):
 
     def getExtensions(self):
 
-        return unicode(self.lineedit.text().toUtf8(), 'utf-8').strip().lower().split()
+        return str(self.lineedit.text().toLatin1()).strip().lower().split()
     pass
 
 
@@ -822,10 +676,10 @@ class ExtensionsLineEdit(QLineEdit):
 
     def checkForChanges(self):
 
-        if self.previousText != unicode(self.text().toUtf8(), 'utf-8').strip().lower():
+        if self.previousText != str(self.text().toLatin1()).strip().lower():
 
             self.emit(SIGNAL("extensionListChanged()"))
-            self.previousText = unicode(self.text().toUtf8(), 'utf-8').strip().lower()
+            self.previousText = str(self.text().toLatin1()).strip().lower()
             pass
 
         return
@@ -885,7 +739,7 @@ class SelectedTagsQListWidget(NicerQListWidget):
         item = self.currentItem()
         if item == None: return
 
-        tag = unicode(item.text().toUtf8(), 'utf-8')
+        tag = str(item.text().toLatin1())
 
         self.takeItem(self.row(item))
         self.emit(SIGNAL("tagDeselected(QString)"), QString(tag))
@@ -959,7 +813,7 @@ class CompletionsQListWidget(NicerQListWidget):
 
     def selectTag(self, item):
 
-        tag = unicode(item.text().toUtf8(), 'utf-8')
+        tag = str(item.text().toLatin1())
         self.setCurrentItem(None) # at least here this works, while clearSelection() doesn't
         self.tagLineEdit.setText(tag)
         self.tagLineEdit.setFocus()
@@ -969,7 +823,7 @@ class CompletionsQListWidget(NicerQListWidget):
 
     def updateCompletions(self):
 
-        partialTag = unicode(self.tagLineEdit.text().toUtf8(), 'utf-8').strip().lower()
+        partialTag = str(self.tagLineEdit.text().toLatin1()).strip().lower()
         selectedTags = self.selectedListView.getItems()
 
         matchingTags = \
@@ -1019,8 +873,6 @@ class CompletionsQListWidget(NicerQListWidget):
         return
 
     pass
-
-
 
 class TagSelector(QWidget):
 
@@ -1121,7 +973,7 @@ class TagSelector(QWidget):
 
         if item == None: return
 
-        oldTag = unicode(item.text().toUtf8(), 'utf-8').strip().lower()
+        oldTag = str(item.text().toLatin1()).strip().lower()
 
         if oldTag == None or len(oldTag) == 0: return
 
@@ -1139,7 +991,7 @@ class TagSelector(QWidget):
 
         if item == None: return
 
-        tag = unicode(item.text().toUtf8(), 'utf-8').strip().lower()
+        tag = str(item.text().toLatin1()).strip().lower()
 
         question = "Are you SURE you want to remove the tag '%s' from all documents?"%tag
 
@@ -1176,7 +1028,7 @@ class TagSelector(QWidget):
             for i in range(self.selectedListView.count()):
 
                 item = self.selectedListView.item(i)
-                if unicode(item.text().toUtf8(), 'utf-8').lower().strip() == oldTag: item.setText(newTag)
+                if str(item.text().toLatin1()).lower().strip() == oldTag: item.setText(newTag)
                 pass
             pass
 
@@ -1190,7 +1042,7 @@ class TagSelector(QWidget):
 
     def selectEnteredTag(self):
 
-        tag = unicode(self.tagLineEdit.text().toUtf8(), 'utf-8').strip().lower()
+        tag = str(self.tagLineEdit.text().toLatin1()).strip().lower()
         self.tagLineEdit.clear()
 
         if not validTag(tag):
@@ -1220,7 +1072,7 @@ class TagSelector(QWidget):
 
     def tagDeselected(self, tag):
 
-        tag = unicode(tag.toUtf8(), 'utf-8')
+        tag = str(tag.toLatin1())
 
         self.completionsListView.updateCompletions()
 
@@ -1255,7 +1107,7 @@ class DocNameWidget(QWidget):
         self.connect(self.nameLineEdit, SIGNAL("editingFinished()"), self.validateDocName)
         return
 
-    def getDocName(self): return unicode(self.nameLineEdit.text().toUtf8(), 'utf-8').strip()
+    def getDocName(self): return str(self.nameLineEdit.text().toLatin1()).strip()
 
     def switchToLineEdit(self):
 
@@ -1751,23 +1603,6 @@ class MatchingDocs(QWidget):
 
     pass
 
-
-
-    #def keyPressEvent(self,event):
-    #    if (event.modifiers() & Qt.AltModifier):
-    #        alt_pressed = True
-    #        print "Alt Pressed"
-    #    else:
-    #        alt_pressed = False
-    #
-    #    print "Key: {}", event.key()
-    #
-    #    #if ( event.key() == Qt.Key_T ) and alt_pressed:
-    #    if ( event.key() == Qt.Key_T ):
-    #        print "T pressed"
-    #
-    #pass
-
 def do_tagger(path, parentWindow = None):
 
     dialog = QDialog(parentWindow)
@@ -1869,52 +1704,82 @@ def do_tagger(path, parentWindow = None):
 
 def do_search(dirsInCmdLine, parentWindow = None):
 
-    # do some definitions first ...
+    # set up interface
 
-    class KeyboardShortcutEventFilterObject(QObject):
+    win = QWidget(parentWindow);
+    win.setWindowTitle(cfg.searchWindowTitle)
 
-        def __init__(self, parent=None):
-            super(KeyboardShortcutEventFilterObject, self).__init__(parent)
-        pass
+    if cfg.runInFullScreenMode: win.showFullScreen()
 
-        def eventFilter(self,object, event):
-            if(event.type() == QEvent.KeyPress):
-                if (event.modifiers() & Qt.ControlModifier):
-                    control_pressed = True
-                else:
-                    control_pressed = False
+    winLayout = QVBoxLayout()
 
-                if   (control_pressed) and ( event.key() == Qt.Key_T or event.key() == Qt.Key_R):
-                    matchingDocsList.renameRetagDoc()
-                elif (control_pressed) and ( event.key() == Qt.Key_M ):
-                   matchingDocsList.moveDocTo()
-                elif (control_pressed) and ( event.key() == Qt.Key_C ):
-                    matchingDocsList.copyDocTo()
-                elif (control_pressed) and ( event.key() == Qt.Key_O ):
-                    matchingDocsList.openDocWith()
-                elif (control_pressed) and ( event.key() == Qt.Key_D ):
-                    matchingDocsList.removeDoc()
-                pass
+    dirSelector = None
 
+    doc_dirs = getDocDirs()
 
-            return QWidget.eventFilter(self, object, event)
-        pass
+    if len(doc_dirs) > 1:
 
+        dirSelector = DirSelector(doc_dirs, dirsInCmdLine)
 
-    def updateFilesSlot():
+    elif not doc_dirs:
 
-        update_files()
+        QMessageBox.critical(None, "oyepa", \
+        "Before using oyepa, you need to tell it where to find your documents.\n\nTo try it out, do the following:\n\n 1- create the file %s and add a line\n\n~/docs\n\n2- create a directory 'docs' in your home dir." % cfg.FILENAME_LISTING_DOC_DIRS)
+        return False
 
-        #matchingDocsList.latestQueryResults = None
-        #matchingDocsList.update(matchingDocsList.latestQueryResults)
+    msgBar = QLabel()
+    msgBar.setText("Ready")
 
-        #readDocDirHierarchy()
-        read_doc_dirs()
-        doc_dir_hierarchy = getDocDirHierarchy()
-        dirSelector.updateDirs(doc_dir_hierarchy)
+    tagSelector = TagSelector("&Search for:", msgBar, [])
+    leaveButton = MyQPushButton(cfg.leaveButtonCaption)
 
-        runQuerySlot()
-    pass
+    topBox = QWidget()
+    middleBox = QWidget()
+
+    topBoxLayout = QHBoxLayout()
+
+    if dirSelector != None: topBoxLayout.addWidget(dirSelector)
+
+    topBoxLayout.addWidget(tagSelector)
+    topBoxLayout.addWidget(leaveButton)
+    topBox.setLayout(topBoxLayout)
+
+    middleBoxLayout = QHBoxLayout()
+
+    untaggedButton = MyQCheckBox("List &untagged")
+    untaggedButton.setFocusPolicy(Qt.NoFocus)
+    widgetWithFocusBeforeUntaggedButtonToggled = None
+
+    matchingDocsList = MatchingDocs(msgBar)
+
+    winLayout.addWidget(topBox)
+
+    if cfg.ExtensionsWidgetClassToUse != None:
+
+        extensionsWidget = globals()[cfg.ExtensionsWidgetClassToUse](); # HACK ALERT
+        winLayout.addWidget(extensionsWidget)
+
+    else: extensionsWidget = None
+
+    winLayout.addWidget(untaggedButton)
+    winLayout.addWidget(matchingDocsList)
+    winLayout.addWidget(msgBar)
+
+    win.setLayout(winLayout)
+    win.show()
+
+    # now draw up a bunch of signal-slot connections
+
+    if cfg.DONT_QUIT_INSTEAD_EXECUTE_CMD: # if this is set, pressing the leaveButton does not exit the application but instead executes the cmd DONT_QUIT_INSTEAD_EXECUTE_CMD in a shell
+
+        win.doLeaveButton = lambda: os.system(cfg.DONT_QUIT_INSTEAD_EXECUTE_CMD)
+
+    else: win.doLeaveButton = win.close # default case, pressing "Leave" closes the window (and the app)
+
+    QObject.connect(leaveButton, SIGNAL("clicked()"), win.doLeaveButton)
+
+    escapeKeyPressed = QShortcut(Qt.Key_Escape, win)
+    app.connect(escapeKeyPressed, SIGNAL("activated()"), win.doLeaveButton)
 
     # and those which prompt an update of the list of matching docs
 
@@ -1969,95 +1834,6 @@ def do_search(dirsInCmdLine, parentWindow = None):
 
         runQuerySlot()
         return
-
-    # and set up interface here
-
-    global app
-
-    keyboardShortcuteventFilterObject = KeyboardShortcutEventFilterObject()
-    app.installEventFilter(keyboardShortcuteventFilterObject)
-
-
-    win = QWidget(parentWindow);
-    win.setWindowTitle(cfg.searchWindowTitle)
-
-    if cfg.runInFullScreenMode: win.showFullScreen()
-
-    winLayout = QVBoxLayout()
-
-    dirSelector = None
-
-    doc_dirs = getDocDirs()
-    doc_dir_hierarchy = getDocDirHierarchy()
-
-    if len(doc_dir_hierarchy) > 1:
-
-        dirSelector = DirSelector(doc_dir_hierarchy, dirsInCmdLine)
-
-    elif not doc_dir_hierarchy:
-
-        QMessageBox.critical(None, "oyepa", \
-        "Before using oyepa, you need to tell it where to find your documents.\n\nTo try it out, do the following:\n\n 1- create the file %s and add a line\n\n~/docs\n\n2- create a directory 'docs' in your home dir." % cfg.FILENAME_LISTING_DOC_DIRS)
-        return False
-
-    msgBar = QLabel()
-    msgBar.setText("Ready")
-
-    tagSelector = TagSelector("&Search for:", msgBar, [])
-    leaveButton = MyQPushButton(cfg.leaveButtonCaption)
-
-    topBox = QWidget()
-    middleBox = QWidget()
-
-    topBoxLayout = QHBoxLayout()
-
-    if dirSelector != None: topBoxLayout.addWidget(dirSelector)
-
-    topBoxLayout.addWidget(tagSelector)
-    topBoxLayout.addWidget(leaveButton)
-    topBox.setLayout(topBoxLayout)
-
-    middleBoxLayout = QHBoxLayout()
-
-    untaggedButton = MyQCheckBox("List &untagged")
-    untaggedButton.setFocusPolicy(Qt.NoFocus)
-    widgetWithFocusBeforeUntaggedButtonToggled = None
-
-    updateDocsButton = MyQPushButton("&Update Files");
-
-    matchingDocsList = MatchingDocs(msgBar)
-
-    winLayout.addWidget(topBox)
-
-    if cfg.ExtensionsWidgetClassToUse != None:
-
-        extensionsWidget = globals()[cfg.ExtensionsWidgetClassToUse](); # HACK ALERT
-        winLayout.addWidget(extensionsWidget)
-
-    else: extensionsWidget = None
-
-    winLayout.addWidget(untaggedButton)
-    winLayout.addWidget(updateDocsButton)
-    winLayout.addWidget(matchingDocsList)
-    winLayout.addWidget(msgBar)
-
-    win.setLayout(winLayout)
-    win.show()
-
-    # now draw up a bunch of signal-slot connections
-
-    if cfg.DONT_QUIT_INSTEAD_EXECUTE_CMD: # if this is set, pressing the leaveButton does not exit the application but instead executes the cmd DONT_QUIT_INSTEAD_EXECUTE_CMD in a shell
-
-        win.doLeaveButton = lambda: os.system(cfg.DONT_QUIT_INSTEAD_EXECUTE_CMD)
-
-    else: win.doLeaveButton = win.close # default case, pressing "Leave" closes the window (and the app)
-
-    QObject.connect(leaveButton, SIGNAL("clicked()"), win.doLeaveButton)
-
-    escapeKeyPressed = QShortcut(Qt.Key_Escape, win)
-    app.connect(escapeKeyPressed, SIGNAL("activated()"), win.doLeaveButton)
-
-    QObject.connect(updateDocsButton, SIGNAL("clicked()"), updateFilesSlot)
 
     QObject.connect(tagSelector, SIGNAL("tagSelected(QString)"), runQuerySlot)
     QObject.connect(tagSelector, SIGNAL("tagDeselected(QString)"), runQuerySlot)

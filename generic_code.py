@@ -19,63 +19,8 @@
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
 
-from fslayer import read_doc_dirs, read_pending_updates, write_pending_updates, getDocDirs
-
 import os
 import sys, string, traceback # for the gui_excepthook function implemented below
-
-import cfg
-
-def update_files():
-    read_doc_dirs()
-    doc_dirs = getDocDirs()
-    while len(doc_dirs) > 0:
-
-        doc_dir = doc_dirs.pop()
-
-        updates_dic = read_pending_updates(doc_dir)
-
-        for orig, new in updates_dic.copy().items(): # doesn not look like it is necessary, but let us iterate over a  copy of the dic just to be safe (since we will be removing items)
-
-            oldpath = os.path.join(doc_dir, orig)
-            newpath = os.path.join(doc_dir, new)
-
-            if os.path.exists(newpath):
-
-                print "Skipping update of doc %s since newpath (%s) already exists"%(oldpath,newpath)
-
-            elif not os.path.exists(oldpath):
-
-                print "Couldn't find doc %s, won't update it"%oldpath
-
-            else:
-
-                try:
-                    os.rename(oldpath, newpath)
-                except Exception, e: print "Unable to rename %s to %s [%s]"%(oldpath,newpath,str(e))
-                else:
-                    if os.path.isdir(newpath):
-                        for doc_dirs_element in doc_dirs:
-                            if oldpath in doc_dirs_element:
-                                i = doc_dirs.index(doc_dirs_element)
-                                doc_dirs[i] =  doc_dirs_element.replace(oldpath,newpath)
-                pass
-            pass
-
-        write_pending_updates(doc_dir, {}) # IMPORTANT!! : )
-
-        # finally, just remove the "internal ops" list file that might be lying around
-
-        oyepa_internal_ops_filepath = \
-        os.path.join(doc_dir, cfg.oyepa_internal_ops_filename)
-
-        if os.path.exists(oyepa_internal_ops_filepath):
-
-            try: os.unlink(oyepa_internal_ops_filepath)
-            except: print "Unable to remove an immediate disappearances file [%s]"%oyepa_internal_ops_filepath
-            pass
-        pass
-
 
 def generate_unused_numbered_filename(basename, ext, workdir=None):
 
@@ -139,7 +84,7 @@ class NicerQListWidget(QListWidget):
 
         items = []
 
-        for i in range(self.count()): items.append(unicode(self.item(i).text().toUtf8(), 'utf-8').lower().strip())
+        for i in range(self.count()): items.append(str(self.item(i).text().toLatin1()).lower().strip())
 
         return items
 
@@ -222,7 +167,7 @@ class NicerQTableWidget(QTableWidget):
 
         items = []
 
-        for i in range(self.count()): items.append(unicode(self.item(i).text().toUtf8(),'utf-8').lower().strip())
+        for i in range(self.count()): items.append(str(self.item(i).text().toLatin1()).lower().strip())
 
         return items
 

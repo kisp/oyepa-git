@@ -161,13 +161,11 @@ def acquirePendingUpdatesFileLock(docDir, exclusiveLock = True):
 #      So, you can simply add a dir inside your home dir by adding the line
 #      "~/project" to the config file.
 
-def readDocDirHierarchy():
+def readDocDirList():
 
     dirlist_path = os.path.join(user.home, cfg.FILENAME_LISTING_DOC_DIRS)
 
     new_doc_dirs = set()
-    hierarchy_root_elements = set()
-    new_doc_dir_hierarchy = dict({'HierarchyRootElements' : hierarchy_root_elements})
 
     if not os.path.exists(dirlist_path): return [] # nothing for us to do here
 
@@ -180,9 +178,6 @@ def readDocDirHierarchy():
 
     for i in dirLines:
 
-        # removing comments
-        i = re.sub("#.*$", "",i)
-
         i = i.strip()
 
         if i == '/' or i == '/*':
@@ -191,7 +186,6 @@ def readDocDirHierarchy():
             pass
 
         i = i.rstrip('/')
-
 
         if len(i) == 0:
 
@@ -204,7 +198,7 @@ def readDocDirHierarchy():
             i = os.path.join(user.home, i)
             pass
 
-        raw_doc_dirs.add(unicode(i, 'utf-8'))
+        raw_doc_dirs.add(i)
 
         pass
 
@@ -226,25 +220,23 @@ def readDocDirHierarchy():
 
         if pth.endswith('*'):
 
-            hierarchy_root_elements.add(d)
-
-            for (ParentDirAbsPath,ChildDirNames,Ignored) in os.walk(d):
-                ChildDirAbsPath = set()
-                for ChildDirName in ChildDirNames:
-                    ChildDirAbsPath.add(os.path.join(ParentDirAbsPath,ChildDirName))
-                new_doc_dir_hierarchy[ParentDirAbsPath] = ChildDirAbsPath
+            os.path.walk(d, dirVisitor, new_doc_dirs) # this is NOT the same as os.walk(). The 'dirVisitor' function is defined below, it merely adds all (sub)dirs it finds to the set of doc_dirs. new_doc_dirs, the last element in this list of arguments, is passed as the first argument of function dirVisitor [dirVisitor merely .add()s each (sub)dir it finds to that set.]
 
         else:
-            if d not in new_doc_dir_hierarchy:
-                new_doc_dir_hierarchy[d] = set()
-            #new_doc_dirs.add(d)
 
-
+            new_doc_dirs.add(d)
             pass
         pass
 
-    return new_doc_dir_hierarchy
+    return new_doc_dirs
 
+
+def dirVisitor(new_doc_dirs, dirname, names): # helper function used by readDocDirList(); see above
+
+    new_doc_dirs.add(dirname)
+    return
+
+# This function provides basic exclusion rules for filenames
 
 def should_skip(filename):
 
@@ -266,9 +258,6 @@ def validTag(s):
 
 def getDocDirs(): return doc_dirs
 
-
-#Provides the hierarchy of doc directories to the GUI layer
-def getDocDirHierarchy(): return doc_dir_hierarchy
 
 # returns a triplet containing (purename, list of tags, metadata is more recent
 # than that in filename).
@@ -1040,20 +1029,7 @@ def remove_tags_in_path_from_cache_and_filename_from_pending_updates(path):
 
     return
 
-def read_doc_dirs():
-    global doc_dir_hierarchy
-    global doc_dirs
-    doc_dir_hierarchy = readDocDirHierarchy()
-    doc_dirs = doc_dir_hierarchy.keys()
-    while( 'HierarchyRootElements' in doc_dirs ):
-        doc_dirs.remove('HierarchyRootElements')
-
-    return
-
-
 # MODULE TOP LEVEL CODE ########################################
 
 
-doc_dir_hierarchy = {}
-doc_dirs = set()
-read_doc_dirs()
+doc_dirs = readDocDirList()
