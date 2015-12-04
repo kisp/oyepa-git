@@ -33,6 +33,8 @@ from fslayer import read_pending_updates, write_pending_updates, readDocDirList,
 
 from generic_code import gui_excepthook
 
+from fileops import grename
+
 import cfg
 
 
@@ -380,7 +382,7 @@ def main():
 
                 else:
 
-                    try: os.rename(oldpath, newpath)
+                    try: grename(oldpath, newpath)
                     except Exception, e: print "Unable to rename %s to %s [%s]"%(oldpath,newpath,str(e))
 
                     pass
